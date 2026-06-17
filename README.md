@@ -7,7 +7,10 @@ A real-time, multiplayer word game built with React and Supabase.
 [![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Vercel](https://img.shields.io/badge/Vercel-Deployed-000000?style=flat-square&logo=vercel&logoColor=white)](https://vercel.com/)
 
-**DRAWL** is a simple multiplayer word game. I built it to experiment with real-time state syncing using Supabase and to see how far I could push a "serverless" game architecture. It's inspired by Scrabble and Countdown.
+**DRAWL** is a simple multiplayer word game based on Scrabble.
+I built it to overcome a huge limitation of Scrabble, namely the inconsistent allocation of vowels and consonants.
+This inconsistency makes Scrabble more luck-based, as users may go several rounds without vowels or consonants.
+In this version, users can choose from consonants and vowels, ala Countdown.
 
 ## 🚀 Features
 
@@ -36,7 +39,7 @@ A real-time, multiplayer word game built with React and Supabase.
    Create a `.env` file:
    ```env
    VITE_SUPABASE_URL=your_url
-   VITE_SUPABASE_ANON_KEY=your_key
+   VITE_SUPABASE_PUBLISHABLE_KEY;=your_key
    ```
 
 3. **Database Schema**:
@@ -60,7 +63,7 @@ A real-time, multiplayer word game built with React and Supabase.
 This project is designed to be hosted on Vercel.
 
 1. **Push to GitHub**: Connect your repo to Vercel.
-2. **Environment Variables**: Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the Vercel project settings.
+2. **Environment Variables**: Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY;` in the Vercel project settings.
 3. **Build Settings**: Vercel should auto-detect Vite, but if not:
    - Build Command: `npm run build`
    - Output Directory: `dist`
