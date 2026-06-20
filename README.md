@@ -85,7 +85,7 @@ npm install
 Create a `.env` file in the root:
 ```env
 VITE_SUPABASE_URL=your_project_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
 
 ### 4. Run Development Server
@@ -104,7 +104,7 @@ Visit [http://localhost:5173](http://localhost:5173) and start playing! 🎉
 1. Click the button above or push to GitHub and import in Vercel
 2. Add environment variables:
    - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
 3. Deploy! Vercel will auto-detect Vite configuration
 
 ### Other Platforms
