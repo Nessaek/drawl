@@ -40,7 +40,7 @@ export default function Board({ board, preview, onCellClick, onDropTile, onRemov
 
   return (
     <div className="board-outer">
-      <div className="board-grid">
+      <div className="board-grid" role="grid" aria-label="Game board, 15 by 15 grid">
         {Array.from({ length: BOARD_SIZE }, (_, r) =>
           Array.from({ length: BOARD_SIZE }, (_, c) => {
             const key = `${r},${c}`;
@@ -51,11 +51,14 @@ export default function Board({ board, preview, onCellClick, onDropTile, onRemov
 
             if (placed) {
               return (
-                <div 
-                  key={key} 
+                <div
+                  key={key}
                   className={`cell cell--placed ${placed.isNew ? 'cell--preview' : ''}`}
                   onClick={placed.isNew ? () => onRemoveTile(r, c) : undefined}
-                  title={placed.isNew ? 'Click to remove tile' : undefined}
+                  role="gridcell"
+                  aria-label={`${placed.letter} at row ${r + 1}, column ${c + 1}${placed.isNew ? ', click to remove' : ''}`}
+                  tabIndex={placed.isNew ? 0 : -1}
+                  onKeyDown={placed.isNew ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRemoveTile(r, c); } } : undefined}
                 >
                   <span className="cell-letter">{placed.letter}</span>
                   <span className="cell-pts">{placed.score}</span>
@@ -64,7 +67,12 @@ export default function Board({ board, preview, onCellClick, onDropTile, onRemov
             }
             if (inPreview) {
               return (
-                <div key={key} className="cell cell--preview">
+                <div
+                  key={key}
+                  className="cell cell--preview"
+                  role="gridcell"
+                  aria-label={`Preview: ${inPreview} at row ${r + 1}, column ${c + 1}`}
+                >
                   <span className="cell-letter">{inPreview}</span>
                   <span className="cell-pts">{}</span>
                 </div>
@@ -78,6 +86,10 @@ export default function Board({ board, preview, onCellClick, onDropTile, onRemov
                 onDragOver={(e) => handleDragOver(e, r, c)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, r, c)}
+                role="gridcell"
+                aria-label={`Empty cell at row ${r + 1}, column ${c + 1}${label ? `, ${label}` : ''}`}
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCellClick(r + 1, c + 1); } }}
               >
                 {label}
               </div>

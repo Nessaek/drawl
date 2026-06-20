@@ -1,7 +1,27 @@
 {
   "name": "drawl",
   "version": "1.0.0",
-  "description": "Multiplayer Scrabble-like game built with React, Supabase, and deployed on Vercel.",
+  "description": "Real-time multiplayer word game built with React and Supabase — a learning project exploring Supabase Realtime features",
+  "author": "Your Name",
+  "license": "MIT",
+  "homepage": "https://github.com/your-username/drawl#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/drawl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/drawl/issues"
+  },
+  "keywords": [
+    "word-game",
+    "scrabble",
+    "multiplayer",
+    "realtime",
+    "supabase",
+    "react",
+    "vite",
+    "game"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

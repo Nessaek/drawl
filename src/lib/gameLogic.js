@@ -14,7 +14,7 @@ export function emptyBoard() {
 }
 
 export function computePreview(word, row, col, dir, board, rack) {
-  if (!word || word.length < 2) return { valid: false, msg: '', cells: [] };
+  if (!word || word.length < 2) return { valid: false, msg: word.length === 1 ? 'Word must be at least 2 letters' : '', cells: [] };
 
   const cells = [];
   const rackNeeded = {};
@@ -25,11 +25,11 @@ export function computePreview(word, row, col, dir, board, rack) {
     const letter = word[i];
 
     if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE)
-      return { valid: false, msg: 'Word goes off the board', cells: [] };
+      return { valid: false, msg: `Word extends beyond the board edge (check ${dir === 'h' ? 'column' : 'row'} position)`, cells: [] };
 
     if (board[r][c]) {
       if (board[r][c].letter !== letter)
-        return { valid: false, msg: `Conflicts with tile at (${r + 1},${c + 1})`, cells: [] };
+        return { valid: false, msg: `Letter "${letter}" conflicts with "${board[r][c].letter}" at (${r + 1},${c + 1})`, cells: [] };
     } else {
       rackNeeded[letter] = (rackNeeded[letter] || 0) + 1;
       cells.push({ r, c, letter });
@@ -38,12 +38,24 @@ export function computePreview(word, row, col, dir, board, rack) {
 
   const available = rack.filter(t => !t.placed).map(t => t.letter);
   const tempRack = [...available];
+  const missing = [];
+
   for (const [l, n] of Object.entries(rackNeeded)) {
+    let count = 0;
     for (let i = 0; i < n; i++) {
       const idx = tempRack.indexOf(l);
-      if (idx === -1) return { valid: false, msg: `You don't have the letter "${l}"`, cells: [] };
+      if (idx === -1) {
+        missing.push(l);
+        break;
+      }
       tempRack.splice(idx, 1);
+      count++;
     }
+  }
+
+  if (missing.length > 0) {
+    const missingLetters = [...new Set(missing)].join(', ');
+    return { valid: false, msg: `Not enough tiles in rack (need: ${missingLetters})`, cells: [] };
   }
 
   return { valid: true, msg: '', cells };

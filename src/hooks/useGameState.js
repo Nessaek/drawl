@@ -34,6 +34,47 @@ export function useGameState() {
   const [position, setPosition] = useState({ row: 8, col: 8, dir: 'h' });
   const [status, setStatus] = useState({ msg: '', type: '' });
   const [preview, setPreview] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+
+  const triggerEmailNotification = useCallback(async (msg) => {
+    if (!gameId) return;
+    
+    // Find recipient (the other player)
+    // We try to find the player who is NOT the current logged in user
+    const opponent = players.find(p => p.id && p.id !== user?.id);
+    
+    // If we can't find by ID (maybe they haven't joined yet with an ID), 
+    // check if it's Player 1 or Player 2 based on current user's position
+    let recipientEmail = opponent?.email;
+    
+    if (!recipientEmail) {
+      // Fallback: if I am player 1, try player 2's email, and vice versa
+      const myIndex = players.findIndex(p => p.id === user?.id);
+      if (myIndex !== -1) {
+        const otherIndex = (myIndex + 1) % 2;
+        recipientEmail = players[otherIndex]?.email;
+      }
+    }
+
+    if (!recipientEmail) {
+      console.warn('No recipient email found for notification');
+      return;
+    }
+
+    await supabase.from('game_notifications').insert({
+      game_id: gameId,
+      message: msg,
+      recipient_email: recipientEmail,
+    });
+  }, [gameId, players, user]);
+
+  const addNotification = useCallback((msg) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setNotifications(prev => [...prev, { id, msg }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  }, []);
 
   const isRemoteUpdate = useRef(false);
   const applyState = useCallback((data) => {
@@ -49,10 +90,14 @@ export function useGameState() {
     setFirstWord(data.firstWord ?? true);
   }, []);
 
+  const joinedPlayers = useRef(new Set());
+
   // Sync gameId to URL
   useEffect(() => {
     if (gameId) {
       window.location.hash = gameId;
+      // Reset joined players when game changes
+      joinedPlayers.current = new Set();
     }
   }, [gameId]);
 
@@ -67,7 +112,7 @@ export function useGameState() {
         .select('state')
         .eq('id', gameId)
         .single();
-      
+
       if (data && data.state) {
         applyState(data.state);
       } else if (error && error.code === 'PGRST116') {
@@ -79,24 +124,79 @@ export function useGameState() {
 
     // Listen for updates
     const channel = supabase
-      .channel(`game:${gameId}`)
+      .channel(`game:${gameId}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'games',
-        filter: `id=eq.${gameId}`
+        filter: `id=eq.${gameId}`,
       }, (payload) => {
         if (payload.new && payload.new.state) {
           isRemoteUpdate.current = true;
           applyState(payload.new.state);
         }
       })
-      .subscribe();
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'games',
+        filter: `id=eq.${gameId}`,
+      }, (payload) => {
+        if (payload.new && payload.new.state) {
+          isRemoteUpdate.current = true;
+          applyState(payload.new.state);
+        }
+      })
+      .on('broadcast', { event: 'notification' }, ({ payload }) => {
+        addNotification(payload.msg);
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        if (!newPresences || newPresences.length === 0) return;
+
+        // Supabase Presence 'join' can fire multiple times for the same user session
+        // if they reconnect or if the channel is re-subscribed.
+        // We track who we've already notified to keep the UI clean.
+        if (joinedPlayers.current.has(key)) return;
+
+        const joinedUser = newPresences[0]?.username || 'A player';
+        if (key !== user?.id) {
+          joinedPlayers.current.add(key);
+          addNotification(`${joinedUser} joined the game`);
+          // Trigger email notification using latest state
+          const currentPlayers = newPresences[0]?.players || [];
+          const opponent = currentPlayers.find(p => p.id && p.id !== user?.id);
+          if (opponent?.email) {
+            supabase.from('game_notifications').insert({
+              game_id: gameId,
+              message: `${joinedUser} just joined your game of DRAWL!`,
+              recipient_email: opponent.email,
+            });
+          }
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: user?.id,
+            username: user?.user_metadata?.full_name || user?.email || 'Anonymous',
+            online_at: new Date().toISOString(),
+          });
+        } else if (status === 'CHANNEL_ERROR') {
+          addNotification('Connection error - moves may not sync');
+        } else if (status === 'TIMED_OUT') {
+          addNotification('Connection timeout - trying to reconnect...');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [gameId, applyState]);
+    // Only re-subscribe when gameId or user changes, not when players/callbacks change
+  }, [gameId, applyState, user, addNotification]);
 
   const saveState = useCallback(async (newState) => {
     if (!gameId) {
@@ -112,18 +212,19 @@ export function useGameState() {
 
     const { error } = await supabase
       .from('games')
-      .upsert({ 
-        id: gameId, 
-        state: newState, 
+      .upsert({
+        id: gameId,
+        state: newState,
         updated_at: new Date(),
-        owner_id: user?.id || null 
+        player1_id: newState.players[0]?.id || null,
+        player2_id: newState.players[1]?.id || null,
       });
-    
-    // We only log critical network errors, ignoring duplicate/expected conflicts if any
+
     if (error && error.code !== '409') {
-      console.error('Supabase Sync Error:', error.message);
+      console.error('Supabase sync error:', error);
+      addNotification('Failed to sync - please check connection');
     }
-  }, [gameId, user]);
+  }, [gameId, addNotification]);
 
   // Save on changes
   useEffect(() => {
@@ -139,14 +240,6 @@ export function useGameState() {
     const newId = Math.random().toString(36).substring(2, 9);
     setGameId(newId);
   }, []);
-
-  const joinGame = useCallback((id) => {
-    if (id) {
-      setGameId(id);
-      setPhase('setup'); // Back to setup to see deal button or wait for sync
-    }
-  }, []);
-
 
   const deal = useCallback((numCons, numVow) => {
     const cb = shuffle(CONSONANT_BAG);
@@ -166,8 +259,14 @@ export function useGameState() {
     };
 
     const newPlayers = [
-      { name: 'Player 1', score: 0, rack: generateRack(0) },
-      { name: 'Player 2', score: 0, rack: generateRack(20) }, // Offset so bags don't start the same
+      { 
+        id: user?.id || null, 
+        name: user?.user_metadata?.full_name || user?.email || 'Player 1',
+        email: user?.email || null,
+        score: 0, 
+        rack: generateRack(0) 
+      },
+      { id: null, name: 'Waiting for player...', score: 0, rack: generateRack(20) },
     ];
 
     setPlayers(newPlayers);
@@ -180,7 +279,41 @@ export function useGameState() {
     setPreview([]);
     setStatus({ msg: '', type: '' });
     setPhase('play');
-  }, []);
+  }, [user]);
+
+  const joinGame = useCallback(async (id) => {
+    if (!id) return;
+    setGameId(id);
+    
+    // Fetch game to see if we can join as Player 2
+    const { data } = await supabase
+      .from('games')
+      .select('state')
+      .eq('id', id)
+      .single();
+
+    if (data?.state) {
+      const state = data.state;
+      // If Player 2 is empty and current user is not Player 1, join as Player 2
+      if (state.players[1] && !state.players[1].id && state.players[0].id !== user?.id) {
+        state.players[1].id = user?.id;
+        state.players[1].name = user?.user_metadata?.full_name || user?.email || 'Player 2';
+        state.players[1].email = user?.email || null;
+        applyState(state);
+        // We need to save this change back to supabase
+        await supabase.from('games').update({ 
+          state,
+          player2_id: user?.id 
+        }).eq('id', id);
+        addNotification(`You joined as ${state.players[1].name}`);
+      } else {
+        applyState(state);
+      }
+      setPhase('play');
+    } else {
+      setPhase('setup');
+    }
+  }, [user, applyState, addNotification]);
 
   const resetToSetup = useCallback(() => {
     setPhase('setup');
@@ -192,9 +325,21 @@ export function useGameState() {
     window.location.hash = '';
   }, []);
 
+  // Get the current player's rack for validation/operations
   const currentRack = players[currentPlayerIndex].rack;
 
+  // Get the rack for the logged-in user (what they should see in the UI)
+  const myPlayerIndex = players.findIndex(p => p.id === user?.id);
+  const myRack = myPlayerIndex >= 0 ? players[myPlayerIndex].rack : currentRack;
+
   const dropTileOnBoard = useCallback((tile, r, c) => {
+    // Auth check
+    const currentPlayer = players[currentPlayerIndex];
+    if (user && currentPlayer.id && user.id !== currentPlayer.id) {
+      setStatus({ msg: "It's not your turn!", type: 'err' });
+      return;
+    }
+
     setBoard(prev => {
       if (prev[r][c]) return prev; // Don't overwrite existing tiles
       const next = prev.map(row => [...row]);
@@ -257,9 +402,15 @@ export function useGameState() {
       next[currentPlayerIndex] = { ...p, rack: newRack };
       return next;
     });
-  }, [currentPlayerIndex]);
+  }, [currentPlayerIndex, players, user]);
 
   const removeTileFromBoard = useCallback((r, c) => {
+    // Auth check
+    const currentPlayer = players[currentPlayerIndex];
+    if (user && currentPlayer.id && user.id !== currentPlayer.id) {
+      return;
+    }
+
     let tileId = null;
     setBoard(prev => {
       if (!prev[r][c]?.isNew) return prev;
@@ -324,9 +475,15 @@ export function useGameState() {
         return next;
       });
     }
-  }, [currentPlayerIndex]);
+  }, [currentPlayerIndex, players, user]);
 
   const recallTiles = useCallback(() => {
+    // Auth check
+    const currentPlayer = players[currentPlayerIndex];
+    if (user && currentPlayer.id && user.id !== currentPlayer.id) {
+      return;
+    }
+
     setBoard(prev => prev.map(row => row.map(cell => (cell?.isNew ? null : cell))));
     setPlayers(prev => {
       const next = [...prev];
@@ -340,7 +497,7 @@ export function useGameState() {
     setWordInput('');
     setPreview([]);
     setStatus({ msg: '', type: '' });
-  }, [currentPlayerIndex]);
+  }, [currentPlayerIndex, players, user]);
 
   const updateWordInput = useCallback((raw, currentBoard, activeRack) => {
     const word = raw.toUpperCase().replace(/[^A-Z]/g, '');
@@ -387,6 +544,13 @@ export function useGameState() {
   }, []);
 
   const placeWord = useCallback((wordSet, currentBoard, activeRack) => {
+    // Auth check: only current player can move
+    const currentPlayer = players[currentPlayerIndex];
+    if (user && currentPlayer.id && user.id !== currentPlayer.id) {
+      setStatus({ msg: "It's not your turn!", type: 'err' });
+      return { ok: false };
+    }
+
     const word = wordInput;
     if (word.length < 2) return { ok: false };
     if (!wordSet) { setStatus({ msg: 'Dictionary loading…', type: 'info' }); return { ok: false }; }
@@ -456,10 +620,22 @@ export function useGameState() {
     // Switch player
     setCurrentPlayerIndex(prevIdx => (prevIdx + 1) % players.length);
 
+    // Notify other players
+    const broadcastChannel = supabase.channel(`game:${gameId}`);
+    const notificationMsg = `${players[currentPlayerIndex].name} played "${word}" for ${pts} points!`;
+    
+    broadcastChannel.send({
+      type: 'broadcast',
+      event: 'notification',
+      payload: { msg: notificationMsg },
+    });
+
+    triggerEmailNotification(notificationMsg);
+
     setTimeout(() => setStatus(s => s.msg.includes(word) ? { msg: '', type: '' } : s), 2500);
 
     return { ok: true, newBoard, newRack };
-  }, [wordInput, position, firstWord, currentPlayerIndex, players]);
+  }, [wordInput, position, firstWord, currentPlayerIndex, players, gameId, triggerEmailNotification, user]);
 
   const doShuffleRack = useCallback(() => {
     setPlayers(prev => {
@@ -475,7 +651,8 @@ export function useGameState() {
   return {
     gameId, createGame, joinGame,
     phase, board, players, currentPlayerIndex, history, turnNum, firstWord,
-    wordInput, position, status, preview, currentRack,
+    wordInput, position, status, preview, currentRack, myRack, notifications,
+    triggerEmailNotification,
     deal, resetToSetup, updateWordInput, updatePosition,
     placeWord, doShuffleRack, setWordInput, setPreview, setStatus, dropTileOnBoard, recallTiles, removeTileFromBoard,
   };

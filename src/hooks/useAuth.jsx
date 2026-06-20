@@ -13,22 +13,36 @@ export const AuthProvider = ({ children }) => {
       setUser(session?.user ?? null);
       setLoading(false);
       
-      // If we just handled a redirect (hash contains access_token), clear it
-      if (window.location.hash.includes('access_token')) {
+      const pendingGameId = localStorage.getItem('drawl_pending_game_id');
+      if (pendingGameId) {
+        localStorage.removeItem('drawl_pending_game_id');
+        window.location.hash = pendingGameId;
+      } else if (window.location.hash.includes('access_token') && !window.location.hash.includes('type=recovery')) {
+        // If we just handled a redirect (hash contains access_token) and no pending game ID, clear it
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
       }
     });
 
     // Listen for changes on auth state (logged in, signed out, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
+
+      if (event === 'PASSWORD_RECOVERY') {
+        console.info('Password recovery mode enabled');
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (provider) => {
+    // Save current game hash so we can redirect back to it after OAuth redirect
+    const currentHash = window.location.hash;
+    if (currentHash && !currentHash.includes('access_token')) {
+      localStorage.setItem('drawl_pending_game_id', currentHash.replace('#', ''));
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
@@ -41,39 +55,42 @@ export const AuthProvider = ({ children }) => {
   const signInWithGoogle = () => signIn('google');
 
   const signInWithEmail = async (email, password) => {
-    // Attempt to sign in first
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     
-    if (!signInError) {
-      return { error: null };
-    }
-
-    // Handle specific error: Email not confirmed
-    if (signInError.message === 'Email not confirmed') {
-      return { message: 'Please confirm your email address before signing in.' };
-    }
-
-    // If sign in fails, it might be because the user doesn't exist yet.
-    // We attempt to sign up. 
-    // Note: Supabase logs a 400 for the failed signIn attempt below. This is normal.
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    
-    if (signUpError) {
-      if (signUpError.status === 400 && signInError.message === 'Invalid login credentials') {
-        return { error: signInError };
+    if (error) {
+      if (error.message === 'Email not confirmed') {
+        return { message: 'Please confirm your email address before signing in.' };
       }
-      return { error: signUpError };
+      if (error.status === 400 || error.message.includes('Invalid login credentials')) {
+        // We could also check specifically for 'User not found' but Supabase often returns generic error for security.
+        // However, if we want to be helpful we can try to differentiate if possible.
+        return { error, userNotFound: error.message.includes('Invalid login credentials') };
+      }
+      return { error };
     }
+    
+    return { error: null };
+  };
 
-    // If auto-confirm is off, user is created but session is null
-    if (signUpData.user && !signUpData.session) {
-      console.info('Signup successful, awaiting email confirmation:', signUpData.user.email);
+  const signUpWithEmail = async (email, password, fullName) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName || '',
+        }
+      }
+    });
+    
+    if (error) {
+      return { error };
+    }
+    
+    if (data.user && !data.session) {
       return { message: 'Account created! Check your email for a confirmation link.' };
     }
     
@@ -85,8 +102,38 @@ export const AuthProvider = ({ children }) => {
     if (error) console.error('Error signing out:', error.message);
   };
 
+  const resetPassword = async (email) => {
+    const currentHash = window.location.hash;
+    if (currentHash && !currentHash.includes('access_token')) {
+      localStorage.setItem('drawl_pending_game_id', currentHash.replace('#', ''));
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    return { error };
+  };
+
+  const updatePassword = async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return { error };
+  };
+
+  const updateProfile = async ({ fullName, avatarColor, avatarEmoji }) => {
+    const { data, error } = await supabase.auth.updateUser({
+      data: {
+        full_name: fullName,
+        avatar_color: avatarColor,
+        avatar_emoji: avatarEmoji,
+      }
+    });
+    if (data?.user) {
+      setUser(data.user);
+    }
+    return { data, error };
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signInWithGoogle, signInWithEmail, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signInWithGoogle, signInWithEmail, signUpWithEmail, signOut, resetPassword, updatePassword, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

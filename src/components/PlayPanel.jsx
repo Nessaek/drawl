@@ -4,6 +4,8 @@ export default function PlayPanel({
   rack, onDragStart, onDragEnd, players, currentPlayerIndex, history, turnNum,
   wordInput, position, status,
   onWordChange, onPositionChange, onPlace, onShuffle, onRecall, onNewGame,
+  user,
+  gameId,
 }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter') onPlace();
@@ -11,9 +13,10 @@ export default function PlayPanel({
   }
 
   const currentPlayer = players[currentPlayerIndex];
+  const isYourTurn = !gameId || (user && currentPlayer.id === user.id);
 
   return (
-    <div className="play-panel">
+    <div className={`play-panel ${!isYourTurn ? 'play-panel--disabled' : ''}`}>
       <div className="score-bar">
         {players.map((p, idx) => (
           <div key={idx} className={`score-pill ${currentPlayerIndex === idx ? 'score-pill--active' : ''}`}>
@@ -30,6 +33,11 @@ export default function PlayPanel({
       <section className="panel-section">
         <div className="section-label">{currentPlayer.name}'s rack</div>
         <Rack rack={rack} onDragStart={onDragStart} onDragEnd={onDragEnd} />
+        {rack.filter(t => !t.placed).length === 0 && (
+          <p className="hint" style={{ marginTop: 8, fontStyle: 'italic' }}>
+            All tiles used! {isYourTurn ? 'Place your word to continue.' : `Waiting for ${currentPlayer.name} to finish their turn.`}
+          </p>
+        )}
       </section>
 
       <section className="panel-section">
@@ -76,16 +84,28 @@ export default function PlayPanel({
           <div className={`status-msg status-msg--${status.type}`}>{status.msg}</div>
         )}
 
+        {!isYourTurn && currentPlayer.id && (
+          <div className="status-msg status-msg--info">Waiting for {currentPlayer.name}...</div>
+        )}
+
         <div className="action-row">
-          <button className="btn btn--primary btn--sm" onClick={onPlace} disabled={wordInput.length < 2}>
+          <button className="btn btn--primary btn--sm" onClick={onPlace} disabled={wordInput.length < 2 || !isYourTurn}>
             Place word
           </button>
-          <button className="btn btn--ghost btn--sm" onClick={() => onWordChange('')}>Clear</button>
-          <button className="btn btn--ghost btn--sm" onClick={onShuffle}>Shuffle</button>
-          <button className="btn btn--ghost btn--sm" onClick={onRecall}>Recall</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => onWordChange('')} disabled={!isYourTurn}>Clear</button>
+          <button className="btn btn--ghost btn--sm" onClick={onShuffle} disabled={!isYourTurn}>Shuffle</button>
+          <button className="btn btn--ghost btn--sm" onClick={onRecall} disabled={!isYourTurn}>Recall</button>
           <button className="btn btn--ghost btn--sm" onClick={onNewGame}>New game</button>
         </div>
-        <p className="hint">Click any empty cell to set position · Enter to place</p>
+        {isYourTurn ? (
+          <div className="keyboard-shortcuts">
+            <p className="hint">
+              <kbd>Enter</kbd> to place · <kbd>Esc</kbd> to clear · Click board to set position
+            </p>
+          </div>
+        ) : (
+          <p className="hint">Viewing {currentPlayer.name}'s turn</p>
+        )}
       </section>
 
       {history.length > 0 && (

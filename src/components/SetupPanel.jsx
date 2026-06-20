@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import EmailAuth from './EmailAuth';
 
-export default function SetupPanel({ onDeal, dictStatus, gameId, onCreateGame, onJoinGame, user, onSignInGoogle }) {
+export default function SetupPanel({ onDeal, dictStatus, gameId, onCreateGame, onJoinGame, user, onSignInClick }) {
   const [numCons, setNumCons] = useState(5);
   const [numVow, setNumVow] = useState(4);
   const [joinId, setJoinId] = useState('');
-  const [showEmailAuth, setShowEmailAuth] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const total = numCons + numVow;
 
@@ -22,12 +21,14 @@ export default function SetupPanel({ onDeal, dictStatus, gameId, onCreateGame, o
     setNumVow(vow); setNumCons(c);
   }
 
-  const shareUrl = gameId 
+  const shareUrl = gameId
     ? `${window.location.origin}${window.location.pathname}#${gameId}`
     : '';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
   };
 
   return (
@@ -43,32 +44,24 @@ export default function SetupPanel({ onDeal, dictStatus, gameId, onCreateGame, o
               Create Online Game
             </button>
           ) : (
-            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(239, 68, 68, 0.1)', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-              <p style={{ fontSize: 12, marginBottom: 8 }}>Please sign in to create online games.</p>
-              {showEmailAuth ? (
-                <EmailAuth onComplete={() => setShowEmailAuth(false)} />
-              ) : (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn--primary btn--sm" onClick={onSignInGoogle} style={{ flex: 1 }}>
-                    Google
-                  </button>
-                  <button className="btn btn--primary btn--sm" onClick={() => setShowEmailAuth(true)} style={{ flex: 1 }}>
-                    Email
-                  </button>
-                </div>
-              )}
+            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(255, 255, 255, 0.02)', borderRadius: 8, border: '1px dashed var(--ui-border)', textAlign: 'center' }}>
+              <p style={{ fontSize: 12, marginBottom: 10, color: 'var(--ui-muted)', lineHeight: '1.4' }}>Please sign in to create online games.</p>
+              <button className="btn btn--primary btn--sm" onClick={onSignInClick} style={{ width: '100%' }}>
+                Sign In to Play Online
+              </button>
             </div>
           )}
 
           <div style={{ borderTop: '1px solid var(--ui-border)', paddingTop: 16 }}>
             <p className="pill-label">Or Join Existing</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <input 
+              <input
                 className="word-input"
                 style={{ flex: 1, fontSize: 14, padding: '6px 10px', height: 'auto', letterSpacing: 'normal' }}
                 placeholder="Game ID (e.g. abc123)"
                 value={joinId}
                 onChange={e => setJoinId(e.target.value.toLowerCase())}
+                onFocus={e => e.target.select()}
               />
               <button 
                 className="btn btn--ghost" 
@@ -91,7 +84,7 @@ export default function SetupPanel({ onDeal, dictStatus, gameId, onCreateGame, o
               onClick={e => e.target.select()}
             />
             <button className="btn btn--ghost btn--sm" onClick={handleCopy} style={{ padding: '4px 8px' }}>
-              Copy
+              {copySuccess ? '✓ Copied!' : 'Copy'}
             </button>
           </div>
           <p style={{ fontSize: 10, color: 'var(--ui-muted)', marginTop: 8 }}>Share this URL with your opponent</p>
